@@ -39,6 +39,7 @@ struct Transfer {
     bool overflow = false;
     FILE* file = nullptr;
     size_t written = 0;
+    bool allocationFailed = false;
     static size_t write(char* data, size_t size, size_t count, void* context) {
         auto& out = *static_cast<Transfer*>(context);
         if (size && count > (out.limit - out.written) / size) {
@@ -51,7 +52,7 @@ struct Transfer {
             return bytes;
         }
         try { out.bytes.insert(out.bytes.end(), data, data + size * count); }
-        catch (...) { return 0; }
+        catch (...) { out.allocationFailed = true; return 0; }
         out.written += size * count;
         return size * count;
     }
@@ -118,6 +119,7 @@ public:
         curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &output);
         auto result = curl_easy_perform(curl.get());
         if (output.overflow) throw ApiError("response_limit");
+        if (output.allocationFailed) throw ApiError("response_memory");
         if (result != CURLE_OK) throw ApiError("network", curl_easy_strerror(result));
         long status = 0;
         curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status);

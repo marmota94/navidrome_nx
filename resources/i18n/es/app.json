@@ -61,6 +61,7 @@
     "http_client": "No se pudo iniciar la conexión HTTP",
     "auth_hash": "No se pudo preparar la autenticación",
     "response_limit": "La respuesta del servidor supera el límite de memoria",
+    "response_memory": "No hay memoria suficiente para recibir la respuesta del servidor",
     "network": "Error de red: {0}",
     "http_status": "Error HTTP {0}",
     "invalid_response": "Respuesta Subsonic no válida",

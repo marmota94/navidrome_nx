@@ -43,8 +43,41 @@ int main(int argc, char** argv) {
     assert(cancelled && !std::filesystem::exists(path) && !std::filesystem::exists(path + ".part"));
     json_object_set_new(config.get(), "username", json_string("a user+&")); Api library(config.get());
     overlay::Page page; page.collection = overlay::Collection::Favorites;
-    auto favorites = overlay::browse(library, page);
+    const auto favoritesPath = (root / "favorites.tmp").string();
+    auto favorites = overlay::browse(library, page, favoritesPath.c_str());
     assert(favorites.items.size() == 1 && favorites.items[0].id == "favorite-track" && !favorites.more);
+    assert(!std::filesystem::exists(favoritesPath));
+    json_object_set_new(config.get(), "username", json_string("large-favorites"));
+    Api largeLibrary(config.get()); page.offset = 4995;
+    const auto largeFavorites = overlay::browse(largeLibrary, page, favoritesPath.c_str());
+    assert(largeFavorites.items.size() == 5 && !largeFavorites.more && largeFavorites.items.front().id == "favorite-4995");
+    assert(!std::filesystem::exists(favoritesPath));
+    largeLibrary.cancel(); bool favoritesCancelled = false;
+    try { overlay::browse(largeLibrary, page, favoritesPath.c_str()); }
+    catch (const ApiError&) { favoritesCancelled = true; }
+    assert(favoritesCancelled && !std::filesystem::exists(favoritesPath));
+    page.offset = 0;
+    // A response much larger than the old 512 KiB cap must retain only a page.
+    auto large = std::unique_ptr<FILE, decltype(&std::fclose)>(std::tmpfile(), std::fclose);
+    assert(large);
+    std::fputs("{\"subsonic-response\":{\"status\":\"ok\",\"starred2\":{\"album\":[{\"id\":\"ignored\"}],\"song\":[", large.get());
+    const std::string padding(1024, 'x');
+    for (int i = 0; i < 5000; ++i)
+        std::fprintf(large.get(), "%s{\"id\":\"song-%d\",\"title\":\"Title %d\",\"artist\":\"Artist\",\"duration\":123,\"ignored\":\"%s\"}", i ? "," : "", i, i, padding.c_str());
+    std::fputs("]}}}", large.get());
+    std::rewind(large.get()); bool largeMore = false;
+    auto largePage = overlay::readFavorites(large.get(), 4980, 10, largeMore);
+    assert(largePage.size() == 10 && largeMore && largePage.front().id == "song-4980" && largePage.back().id == "song-4989");
+    assert(largePage.front().duration == 123 && largePage.front().artist == "Artist");
+    std::rewind(large.get());
+    auto lastPage = overlay::readFavorites(large.get(), 4995, 10, largeMore);
+    assert(lastPage.size() == 5 && !largeMore && lastPage.front().id == "song-4995");
+    auto invalid = std::unique_ptr<FILE, decltype(&std::fclose)>(std::tmpfile(), std::fclose);
+    std::fputs("{\"subsonic-response\":{\"status\":\"failed\",\"error\":{\"code\":40}}}", invalid.get());
+    std::rewind(invalid.get()); bool denied = false;
+    try { overlay::readFavorites(invalid.get(), 0, 10, largeMore); }
+    catch (const ApiError& error) { denied = error.key == "subsonic" && error.detail == "40"; }
+    assert(denied);
     page.collection = overlay::Collection::Albums;
     assert(overlay::browse(library, page).items[0].id == "id /&");
     page.collection = overlay::Collection::Artists;

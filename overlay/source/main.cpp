@@ -273,6 +273,13 @@ public:
                 auto done = job.get();
                 activeApi.reset();
                 if (currentJob) done();
+            } catch (const ApiError& error) {
+                activeApi.reset();
+                if (currentJob && error.key == "response_memory" && completed != Job::Prefetch)
+                    status(tr("Not enough memory for server response", "Memoria insuficiente para la respuesta"));
+                else if (currentJob && completed == Job::Prefetch)
+                    status(tr("Could not cache upcoming songs", "No se pudieron guardar las próximas canciones"));
+                else if (currentJob) status(error.what());
             } catch (const std::exception& error) {
                 activeApi.reset();
                 if (currentJob) {

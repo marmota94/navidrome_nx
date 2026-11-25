@@ -61,6 +61,7 @@
     "http_client": "Cannot create HTTP client",
     "auth_hash": "Authentication hash failed",
     "response_limit": "Server response exceeds memory limit",
+    "response_memory": "Not enough memory to receive the server response",
     "network": "Network error: {0}",
     "http_status": "HTTP error {0}",
     "invalid_response": "Invalid Subsonic response",

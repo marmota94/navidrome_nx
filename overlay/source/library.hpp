@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 #include "api.hpp"
+#include "favorites.hpp"
 #include <chrono>
+#include <unistd.h>
 
 namespace overlay {
 constexpr size_t PageSize = 10;
@@ -31,7 +33,7 @@ inline std::vector<Entry> playbackWindow(const Page& page, size_t selected) {
     tracks.insert(tracks.end(), page.lookAhead.begin(), page.lookAhead.begin() + extra);
     return tracks;
 }
-inline Page browse(const Api& api, Page page) {
+inline Page browse(const Api& api, Page page, const char* favoritesPath = "sdmc:/switch/navidrome_nx/overlay-library.tmp") {
     std::vector<Entry> all;
     const auto token = salt();
     auto get = [&](const char* endpoint, std::vector<std::pair<std::string, std::string>> params = {}) {
@@ -39,7 +41,22 @@ inline Page browse(const Api& api, Page page) {
     };
     switch (page.collection) {
         case Collection::Favorites: {
-            auto root = get("getStarred2"); all = Api::entries(root.get(), "starred2", "song"); break;
+            const char* path = favoritesPath;
+            auto cleanup = [path](FILE* file) { std::fclose(file); ::unlink(path); };
+            std::unique_ptr<FILE, decltype(cleanup)> file(std::fopen(path, "w+b"), cleanup);
+            if (!file) throw std::runtime_error("Cannot write temporary Favorites response");
+            api.request("getStarred2", {}, token, 8 * 1024 * 1024, file.get());
+            if (std::fflush(file.get()) || std::fseek(file.get(), 0, SEEK_SET))
+                throw std::runtime_error("Cannot read temporary Favorites response");
+            bool beyondWindow = false;
+            page.items = readFavorites(file.get(), page.offset, PageSize + PrefetchCount, beyondWindow);
+            page.more = beyondWindow || page.items.size() > PageSize;
+            page.lookAhead.clear();
+            if (page.items.size() > PageSize) {
+                page.lookAhead.assign(page.items.begin() + PageSize, page.items.end());
+                page.items.resize(PageSize);
+            }
+            return page;
         }
         case Collection::Albums: {
             auto root = get("getAlbumList2", {{"type", "alphabeticalByName"}, {"size", std::to_string(PageSize + 1)}, {"offset", std::to_string(page.offset)}});
@@ -68,7 +85,7 @@ inline Page browse(const Api& api, Page page) {
     }
     page.items = slice(all, page.offset, page.more);
     page.lookAhead.clear();
-    if (page.more && (page.collection == Collection::Favorites || page.collection == Collection::AlbumSongs)) {
+    if (page.more && page.collection == Collection::AlbumSongs) {
         const size_t next = page.offset + page.items.size();
         const auto count = std::min(PrefetchCount, all.size() - next);
         page.lookAhead.assign(all.begin() + next, all.begin() + next + count);

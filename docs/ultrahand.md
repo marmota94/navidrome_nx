@@ -79,8 +79,10 @@ play. Selecting another list or song takes priority over background caching.
 - Artwork: bounded 128 KiB download, at most 256×256 source pixels, rendered at
   128×128. Missing or invalid artwork uses a placeholder and does not interrupt
   music. Artwork requires network access when the current track changes.
-- Library responses are capped at 512 KiB. Extremely large Favorites/artist
-  indices can exceed this limit and display an API error.
+- Favorites responses are downloaded to a temporary SD file (up to 8 MiB) and
+  parsed one song at a time, retaining only the displayed ten-song page. The
+  temporary file is removed on success or failure. Other library responses are
+  capped at 512 KiB; extremely large artist indices can exceed that limit.
 
 ## Validation status
 
@@ -90,10 +92,12 @@ limits, cache eviction/protected tracks, metadata, and cancellation cleanup.
 The package check verifies the NRO magic, ExeFS contents, sysmodule program ID,
 and boot flag.
 
-**Hardware validation is pending.** In-game audio mixing, console firmware /
-Atmosphère / Ultrahand compatibility, small overlay heaps, suspend/resume,
-repeated open/close, networking, artwork, and actual controller focus must be
-checked on the Switch before treating this as a stable release.
+On November 18, 2026, the user confirmed that Favorites opens successfully on
+Switch after installing the response-memory fix via FTP. This confirms the
+reported Favorites failure is resolved on that console. In-game audio mixing,
+broader firmware / Atmosphère / Ultrahand compatibility, suspend/resume,
+repeated open/close, artwork, and controller navigation still need dedicated
+hardware validation.
 
 ## Upstream and licensing
 

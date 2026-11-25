@@ -14,7 +14,7 @@ class Server(http.server.BaseHTTPRequestHandler):
         url = urllib.parse.urlsplit(self.path)
         query = urllib.parse.parse_qs(url.query)
         expected = hashlib.md5(b"s3cret" + query.get("s", [""])[0].encode()).hexdigest()
-        if query.get("u") != ["a user+&"] or query.get("t") != [expected]:
+        if query.get("u") not in (["a user+&"], ["large-favorites"]) or query.get("t") != [expected]:
             self.send_error(401)
             return
         endpoint = url.path.removeprefix("/rest/").removesuffix(".view")
@@ -76,6 +76,10 @@ class Server(http.server.BaseHTTPRequestHandler):
             body = {"subsonic-response": {"status": "failed", "error": {"code": 40}}}
         elif endpoint == "getStarred2":
             body["subsonic-response"]["starred2"] = {"album": [{"id": "favorite-album", "name": "Favorite album"}], "song": [{"id": "favorite-track", "title": "Favorite track", "coverArt": "cover /&"}]}
+            if query.get("u") == ["large-favorites"]:
+                body["subsonic-response"]["starred2"]["song"] = [
+                    {"id": f"favorite-{i}", "title": f"Favorite {i}", "ignored": "x" * 1024}
+                    for i in range(5000)]
         elif endpoint == "getLyricsBySongId":
             if query.get("id") == ["empty"]:
                 body["subsonic-response"]["lyricsList"] = {}
