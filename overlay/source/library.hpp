@@ -5,6 +5,7 @@
 
 namespace overlay {
 constexpr size_t PageSize = 10;
+constexpr size_t PrefetchCount = 2;
 enum class Collection { Favorites, Albums, Artists, ArtistAlbums, AlbumSongs };
 struct Page {
     Collection collection = Collection::Albums;
@@ -12,6 +13,7 @@ struct Page {
     size_t offset = 0, focus = 0;
     bool more = false;
     std::vector<Entry> items;
+    std::vector<Entry> lookAhead;
 };
 inline std::string salt() {
     return std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
@@ -20,6 +22,14 @@ inline std::vector<Entry> slice(const std::vector<Entry>& entries, size_t offset
     more = offset < entries.size() && entries.size() - offset > PageSize;
     if (offset >= entries.size()) return {};
     return {entries.begin() + offset, entries.begin() + std::min(entries.size(), offset + PageSize)};
+}
+inline std::vector<Entry> playbackWindow(const Page& page, size_t selected) {
+    if (selected >= page.items.size() || page.items[selected].kind != EntryKind::Song) return {};
+    const auto visible = std::min(PrefetchCount + 1, page.items.size() - selected);
+    std::vector<Entry> tracks(page.items.begin() + selected, page.items.begin() + selected + visible);
+    const auto extra = std::min(PrefetchCount + 1 - visible, page.lookAhead.size());
+    tracks.insert(tracks.end(), page.lookAhead.begin(), page.lookAhead.begin() + extra);
+    return tracks;
 }
 inline Page browse(const Api& api, Page page) {
     std::vector<Entry> all;
@@ -56,7 +66,14 @@ inline Page browse(const Api& api, Page page) {
             break;
         }
     }
-    page.items = slice(all, page.offset, page.more); return page;
+    page.items = slice(all, page.offset, page.more);
+    page.lookAhead.clear();
+    if (page.more && (page.collection == Collection::Favorites || page.collection == Collection::AlbumSongs)) {
+        const size_t next = page.offset + page.items.size();
+        const auto count = std::min(PrefetchCount, all.size() - next);
+        page.lookAhead.assign(all.begin() + next, all.begin() + next + count);
+    }
+    return page;
 }
 inline std::string elapsed(uint32_t frames, uint32_t rate) {
     const auto seconds = rate ? frames / rate : 0;

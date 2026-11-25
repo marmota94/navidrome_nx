@@ -52,13 +52,13 @@ folder on the SD card to disable automatic startup.
 - B: return to the previous list; from Home, close/return to Ultrahand.
 - Stop and clear queue: release the current queue, including its cache protection.
 
-Select a song to download and queue its **displayed page, up to 10 tracks**, in
-server order, starting at that song. Wait until the download counter finishes
-before closing the overlay. Previous/next and automatic advancement work within
-that cached page even with the overlay closed or Wi-Fi disconnected. Open the
-next page and select a song to load more. A failed download keeps the previous
-queue; B cancels an in-progress list/download operation when returning from a
-collection. If exiting entirely, unfinished downloads are cancelled.
+Select a song to download it and start playback as soon as it is ready. The
+overlay then caches and queues up to two following songs, in order, even when
+they appear on the next page. Keep the overlay open until caching finishes. Once
+queued, those songs can play with the overlay closed or Wi-Fi disconnected.
+Select another song to start a new set. A failed selected download keeps the
+previous queue. If an upcoming download fails, already queued songs can still
+play. Selecting another list or song takes priority over background caching.
 
 ## Limits and storage
 
@@ -71,7 +71,7 @@ collection. If exiting entirely, unfinished downloads are cancelled.
   contain titles and cover IDs, never passwords or authenticated URLs.
 - Old cache entries are evicted before downloads; current/queued tracks are
   protected. If the protected queue fills the budget, use Stop and clear queue
-  before downloading another page. Interrupted partial downloads are cleaned up
+  before downloading another song. Interrupted partial downloads are cleaned up
   at the next cache reservation.
 - Cache persists across reboot/logout. To erase saved music, stop sys-tune and
   delete `overlay-cache` on the SD. Signing out in the app prevents new overlay

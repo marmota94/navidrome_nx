@@ -8,6 +8,7 @@
 #include <nanovg/stb_image.h>
 #include <future>
 #include <chrono>
+#include <cstring>
 #include <thread>
 #include "tune.h"
 #include "login.hpp"
@@ -54,7 +55,10 @@ class PlayerGui : public tsl::Gui {
     std::future<std::function<void()>> job;
     std::shared_ptr<Api> activeApi;
     unsigned generation = 0;
-    std::atomic<size_t> downloaded{0}, downloading{0};
+    enum class Job { Browse, Playback, Prefetch, Artwork };
+    Job jobKind = Job::Browse;
+    unsigned jobGeneration = 0;
+    std::function<void()> deferredInput;
     int focusDelay = 0;
     size_t restoreIndex = 0, homeFocus = 0;
     std::chrono::steady_clock::time_point nextPoll{};
@@ -71,16 +75,25 @@ class PlayerGui : public tsl::Gui {
         }
         connected = true;
     }
-    bool start(std::function<std::function<void()>(std::shared_ptr<Api>)> work) {
+    void cancelJob() {
+        ++generation;
+        if (activeApi) activeApi->cancel();
+    }
+    bool backgroundJob() const { return busy() && (jobKind == Job::Prefetch || jobKind == Job::Artwork); }
+    void deferInput(std::function<void()> input) {
+        deferredInput = std::move(input);
+        cancelJob();
+    }
+    bool start(Job kind, std::function<std::function<void()>(std::shared_ptr<Api>)> work) {
         if (busy()) { status(tr("Loading… please wait", "Cargando… espera")); return false; }
         try {
             if (!networkReady) throw std::runtime_error(tr("Network unavailable", "Red no disponible"));
             auto config = loadLoginConfig();
             if (!config) throw std::runtime_error(tr("Sign in using the Navidrome NX app first", "Inicia sesión en Navidrome NX primero"));
             activeApi = std::make_shared<Api>(config.get());
-            downloading = 0; downloaded = 0;
+            jobKind = kind; jobGeneration = generation;
             job = std::async(std::launch::async, [api = activeApi, work = std::move(work)] { return work(api); });
-            status(tr("Loading…", "Cargando…")); return true;
+            return true;
         } catch (const std::exception& error) { status(error.what()); return false; }
     }
     void rememberFocus() {
@@ -88,20 +101,22 @@ class PlayerGui : public tsl::Gui {
         if (found != rows.end()) page.focus = std::distance(rows.begin(), found);
     }
     void load(overlay::Page target, bool push) {
+        if (backgroundJob()) {
+            deferInput([this, target = std::move(target), push]() mutable { load(std::move(target), push); });
+            return;
+        }
         if (busy()) { status(tr("Loading… please wait", "Cargando… espera")); return; }
         rememberFocus();
         if (home) homeFocus = page.focus;
         if (target.items.empty()) target.focus = 1;
-        const auto expected = generation;
-        start([this, target, push, expected](auto api) {
+        if (start(Job::Browse, [this, target = std::move(target), push](auto api) {
             auto result = overlay::browse(*api, target);
-            return [this, result = std::move(result), push, expected]() mutable {
-                if (generation != expected) return;
+            return [this, result = std::move(result), push]() mutable {
                 if (push && !home) history.push_back(page);
                 home = false; page = std::move(result); rebuild(page.focus);
                 status(page.items.empty() ? tr("No songs or albums found", "No se encontraron canciones ni álbumes") : tr("Ready", "Listo"));
             };
-        });
+        })) status(tr("Loading…", "Cargando…"));
     }
     std::set<std::string> protectedQueue() {
         std::set<std::string> files;
@@ -114,34 +129,81 @@ class PlayerGui : public tsl::Gui {
         if (!currentPath.empty()) files.insert(currentPath);
         return files;
     }
-    void playPage(size_t selected) {
-        connect(); if (!connected || busy() || selected >= page.items.size()) return;
+    bool queueMatches(const std::vector<std::string>& paths) {
+        u32 count = 0;
+        check(tuneGetPlaylistSize(&count));
+        if (count != paths.size()) return false;
+        for (u32 i = 0; i < count; ++i) {
+            char path[FS_MAX_PATH]{};
+            check(tuneGetPlaylistItem(i, path, sizeof(path)));
+            if (mountedPath(path) != paths[i]) return false;
+        }
+        return true;
+    }
+    void prefetch(std::vector<Entry> tracks, std::vector<std::string> queued) {
+        if (queued.size() >= tracks.size()) {
+            status(tr("Playing", "Reproduciendo"));
+            return;
+        }
+        std::set<std::string> protectedFiles(queued.begin(), queued.end());
+        if (start(Job::Prefetch, [this, tracks = std::move(tracks), queued = std::move(queued),
+                protectedFiles = std::move(protectedFiles)](auto api) mutable {
+            auto path = overlay::cacheTrack(*api, tracks[queued.size()], protectedFiles);
+            return [this, path = std::move(path), tracks = std::move(tracks), queued = std::move(queued)]() mutable {
+                if (!connected || !queueMatches(queued)) return;
+                check(tuneEnqueue(servicePath(path).c_str(), TuneEnqueueType_Back));
+                queued.push_back(std::move(path));
+                prefetch(std::move(tracks), std::move(queued));
+            };
+        })) status(tr("Caching upcoming songs…", "Guardando próximas canciones…"));
+    }
+    void playTracks(std::vector<Entry> tracks) {
+        if (tracks.empty()) return;
+        if (backgroundJob()) {
+            deferInput([this, tracks = std::move(tracks)]() mutable { playTracks(std::move(tracks)); });
+            return;
+        }
+        connect(); if (!connected || busy()) return;
         try {
             auto protectedFiles = protectedQueue();
-            auto tracks = page.items;
-            const auto expected = generation;
-            start([this, tracks, selected, expected, protectedFiles = std::move(protectedFiles)](auto api) mutable {
-                std::vector<std::string> paths; downloading = tracks.size();
-                for (const auto& track : tracks) { paths.push_back(overlay::cacheTrack(*api, track, protectedFiles)); ++downloaded; }
-                // Change the live queue only after every download has completed successfully.
-                return [this, paths = std::move(paths), selected, expected] {
-                    if (generation != expected) return;
+            if (start(Job::Playback, [this, tracks = std::move(tracks), protectedFiles = std::move(protectedFiles)](auto api) mutable {
+                auto path = overlay::cacheTrack(*api, tracks.front(), protectedFiles);
+                return [this, path = std::move(path), tracks = std::move(tracks)]() mutable {
+                    if (!connected) return;
                     check(tunePause()); check(tuneClearQueue()); check(tuneSetShuffleMode(TuneShuffleMode_Off)); check(tuneSetRepeatMode(TuneRepeatMode_Off));
-                    for (const auto& path : paths) check(tuneEnqueue(servicePath(path).c_str(), TuneEnqueueType_Back));
-                    check(tuneSelect(selected)); check(tunePlay());
-                    status(tr("Playing cached page (up to 10 songs)", "Reproduciendo página guardada (hasta 10 canciones)")); nextPoll = {};
+                    check(tuneEnqueue(servicePath(path).c_str(), TuneEnqueueType_Back));
+                    check(tuneSelect(0)); check(tunePlay());
+                    nextPoll = {};
+                    prefetch(std::move(tracks), {std::move(path)});
                 };
-            });
-            status(tr("Downloading page… keep overlay open", "Descargando página… mantén abierto el overlay"));
+            })) status(tr("Buffering selected song…", "Cargando canción elegida…"));
         } catch (const std::exception& error) { status(error.what()); }
     }
     void transport(int action) {
+        if (action == 3) {
+            deferredInput = {};
+            if (busy() && (jobKind == Job::Playback || jobKind == Job::Prefetch)) cancelJob();
+        }
         connect(); if (!connected) return;
         try {
             if (action == 0) check(tunePrev());
             else if (action == 1) { bool state = false; check(tuneGetStatus(&state)); check(state ? tunePause() : tunePlay()); }
-            else if (action == 2) check(tuneNext());
-            else { check(tunePause()); check(tuneClearQueue()); }
+            else if (action == 2) {
+                if (busy() && jobKind == Job::Prefetch && jobGeneration == generation) {
+                    u32 size = 0;
+                    char last[FS_MAX_PATH]{}, current[FS_MAX_PATH]{};
+                    TuneCurrentStats value{};
+                    check(tuneGetPlaylistSize(&size));
+                    if (size && R_SUCCEEDED(tuneGetPlaylistItem(size - 1, last, sizeof(last))) &&
+                        R_SUCCEEDED(tuneGetCurrentQueueItem(current, sizeof(current), &value)) &&
+                        std::strcmp(last, current) == 0) {
+                        status(tr("Next song is still downloading", "Descargando la próxima canción"));
+                        return;
+                    }
+                }
+                check(tuneNext());
+            }
+            else { check(tunePause()); check(tuneClearQueue()); status(tr("Queue cleared", "Cola vacía")); }
             nextPoll = {};
         } catch (const std::exception& error) { connected = false; tuneExit(); status(error.what()); }
     }
@@ -179,7 +241,7 @@ class PlayerGui : public tsl::Gui {
             for (size_t i = 0; i < page.items.size(); ++i) {
                 const auto entry = page.items[i];
                 add(entry.title, [this, entry, i] {
-                    if (entry.kind == EntryKind::Song) playPage(i);
+                    if (entry.kind == EntryKind::Song) playTracks(overlay::playbackWindow(page, i));
                     else load({entry.kind == EntryKind::Artist ? overlay::Collection::ArtistAlbums : overlay::Collection::AlbumSongs, entry.id, entry.title, entry.coverArt}, true);
                 }, entry.kind == EntryKind::Song ? "▶" : "›");
             }
@@ -203,11 +265,27 @@ public:
         list = new tsl::elm::List(); frame->setContent(list); connect(); rebuild(); return frame;
     }
     void update() override {
-        if (busy() && downloading.load()) status(std::string(tr("Downloading songs: ", "Descargando canciones: ")) + std::to_string(downloaded.load()) + "/" + std::to_string(downloading.load()));
         if (focusDelay && --focusDelay == 0 && !rows.empty()) requestFocus(rows[restoreIndex], tsl::FocusDirection::None, false);
         if (job.valid() && job.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-            try { auto done = job.get(); activeApi.reset(); done(); }
-            catch (const std::exception& error) { activeApi.reset(); status(error.what()); }
+            const bool currentJob = jobGeneration == generation;
+            const Job completed = jobKind;
+            try {
+                auto done = job.get();
+                activeApi.reset();
+                if (currentJob) done();
+            } catch (const std::exception& error) {
+                activeApi.reset();
+                if (currentJob) {
+                    if (completed == Job::Prefetch)
+                        status(tr("Could not cache upcoming songs", "No se pudieron guardar las próximas canciones"));
+                    else status(error.what());
+                }
+            }
+            if (deferredInput && !busy()) {
+                auto input = std::move(deferredInput);
+                deferredInput = {};
+                input();
+            }
         }
         const auto now = std::chrono::steady_clock::now();
         if (connected && now >= nextPoll) {
@@ -230,12 +308,11 @@ public:
         if (!busy() && !current.coverArt.empty() && requestedArt != current.coverArt) {
             const auto id = current.coverArt, path = currentPath;
             requestedArt = id;
-            const auto oldMessage = message;
-            if (start([this, id, path](auto api) {
+            start(Job::Artwork, [this, id, path](auto api) {
                 std::vector<unsigned char> pixels;
                 try { pixels = cover(*api, id); } catch (...) {} // Artwork failure must not stop playback.
                 return [this, path, pixels = std::move(pixels)]() mutable { if (path == currentPath) artwork = std::move(pixels); };
-            })) status(oldMessage);
+            });
         }
     }
     bool handleInput(u64 down, u64, const HidTouchState&, HidAnalogStickState, HidAnalogStickState) override {
@@ -243,7 +320,8 @@ public:
         if (down & HidNpadButton_R) { transport(2); return true; }
         if (down & HidNpadButton_X) { transport(1); return true; }
         if ((down & HidNpadButton_B) && !home) {
-            if (busy()) { ++generation; activeApi->cancel(); }
+            if (deferredInput) deferredInput = {};
+            if (busy() && !backgroundJob()) { cancelJob(); status(tr("Ready", "Listo")); }
             if (history.empty()) home = true;
             else { page = std::move(history.back()); history.pop_back(); }
             rebuild(home ? homeFocus : page.focus); return true;

@@ -36,3 +36,7 @@ g++ -std=c++17 -Wall -Wextra -Werror -Isrc tests/warp_test.cpp -o /tmp/warp_test
 /tmp/warp_test
 g++ -std=c++17 -Wall -Wextra -Werror -Isrc tests/cover_flow_test.cpp -lcurl -ljansson -lmbedcrypto -o /tmp/cover_flow_test
 /tmp/cover_flow_test
+g++ -std=c++17 -Wall -Wextra -Werror -DNAVIDROME_VERSION='"1.1.0"' -Isrc tests/release_update_test.cpp -lcurl -ljansson -lmbedcrypto -pthread -o /tmp/release_update_test
+/tmp/release_update_test
+g++ -std=c++17 -Wall -Wextra -Werror -Isrc tests/equalizer_test.cpp -o /tmp/equalizer_test
+/tmp/equalizer_test

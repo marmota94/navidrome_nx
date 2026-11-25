@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include "bubbles.hpp"
 #include "atomic_file.hpp"
+#include "equalizer.hpp"
 
 struct Settings {
     bool showClock = true;
@@ -23,6 +24,7 @@ struct Settings {
     int bubbleCount = DefaultBubbleCount;
     int columns = 4;
     int visualizer = 0;
+    EqualizerGains equalizer{};
 };
 inline Settings preferences;
 inline constexpr const char* SettingsPath = "sdmc:/switch/navidrome_nx/settings.json";
@@ -54,6 +56,11 @@ inline Settings parseSettings(json_t* root) {
     result.bubbleSpeed = integer("bubbleSpeed", 2, 0, 3);
     result.columns = integer("columns", 4, 4, 6);
     result.visualizer = integer("visualizer", 0, 0, 2);
+    result.equalizer = {{
+        integer("eqBass", 0, -EqualizerGainLimit, EqualizerGainLimit),
+        integer("eqMid", 0, -EqualizerGainLimit, EqualizerGainLimit),
+        integer("eqTreble", 0, -EqualizerGainLimit, EqualizerGainLimit)
+    }};
     return result;
 }
 inline Settings loadSettings(const char* path = SettingsPath) {
@@ -72,10 +79,11 @@ inline Settings loadSettings(const char* path = SettingsPath) {
     catch (...) { json_decref(root); throw; }
 }
 inline void saveSettings(const Settings& value, const char* path = SettingsPath) {
-    auto root = json_pack("{s:b,s:b,s:b,s:b,s:i,s:i,s:i,s:i,s:i,s:i,s:i}",
+    auto root = json_pack("{s:b,s:b,s:b,s:b,s:i,s:i,s:i,s:i,s:i,s:i,s:i,s:i,s:i,s:i}",
         "showClock", value.showClock, "sidebarCollapsed", value.sidebarCollapsed,
         "remoteEnabled", value.remoteEnabled, "cacheSongs", value.cacheSongs, "background", value.background,
-        "bubbleSpeed", value.bubbleSpeed, "columns", value.columns, "backgroundStyle", value.backgroundStyle, "bubbleCount", value.bubbleCount, "backgroundOpacity", value.backgroundOpacity, "visualizer", value.visualizer);
+        "bubbleSpeed", value.bubbleSpeed, "columns", value.columns, "backgroundStyle", value.backgroundStyle, "bubbleCount", value.bubbleCount, "backgroundOpacity", value.backgroundOpacity, "visualizer", value.visualizer,
+        "eqBass", value.equalizer[0], "eqMid", value.equalizer[1], "eqTreble", value.equalizer[2]);
     if (!root) throw std::runtime_error("settings_write");
     try { parseSettings(root); } catch (...) { json_decref(root); throw; }
     char* encoded = json_dumps(root, JSON_INDENT(2));

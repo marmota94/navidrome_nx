@@ -3,8 +3,12 @@
 #include "music_surface.hpp"
 #include "clock_text.hpp"
 #include "pairing_qr.hpp"
+#include "release_update.hpp"
 
 class SettingsScreen : public aurore::Activity {
+    AppUpdater& updater;
+    MusicButton* updateButton = nullptr;
+    aurore::Label* updateStatus = nullptr;
     aurore::Label *message = nullptr, *remoteAddress = nullptr, *header = nullptr;
     std::vector<std::pair<MusicButton*, std::function<std::string()>>> values;
     std::function<void()> changed;
@@ -16,8 +20,8 @@ class SettingsScreen : public aurore::Activity {
     aurore::Box* qrPanel = nullptr;
     PairingQr* qr = nullptr;
     aurore::ScrollingFrame* settingsScroll = nullptr;
-    std::array<aurore::Box*, 4> pages{};
-    std::array<MusicButton*, 4> tabs{};
+    std::array<aurore::Box*, 5> pages{};
+    std::array<MusicButton*, 5> tabs{};
     int activeTab = 0;
     bool lastQrVisible = false;
     aurore::Box *bubbleRow = nullptr, *opacityRow = nullptr, *styleRow = nullptr, *speedRow = nullptr;
@@ -45,6 +49,21 @@ class SettingsScreen : public aurore::Activity {
         auto label = new aurore::Label(); label->setText(aurore::getStr(title)); label->setFontSize(24); label->setHeight(36); label->setShrink(0); parent->addView(label);
         auto detail = new aurore::Label(); detail->setText(aurore::getStr(description)); detail->setFontSize(16); detail->setHeight(40); detail->setShrink(0); detail->setTextColor(nvgRGB(188, 192, 215)); parent->addView(detail); return detail;
     }
+    void applyOption(const std::function<void(int)>& change, int direction) {
+        const auto previous = preferences;
+        change(direction);
+        try {
+            std::filesystem::create_directories("sdmc:/switch/navidrome_nx");
+            saveSettings(preferences);
+            changed();
+            message->setText(aurore::getStr("app/settings_saved")); message->setTextColor(nvgRGB(147, 224, 196));
+        } catch (...) {
+            preferences = previous;
+            message->setText(aurore::getStr("app/settings_save_error")); message->setTextColor(nvgRGB(255, 153, 164));
+        }
+        for (auto& item : values) item.first->setText("‹ " + item.second() + " ›");
+        updateAppearance();
+    }
     aurore::Box* option(aurore::Box* parent, const std::string& name, std::function<std::string()> value,
         std::function<void(int)> change) {
         auto row = musicCard(aurore::Axis::ROW);
@@ -53,21 +72,7 @@ class SettingsScreen : public aurore::Activity {
         label->setWidth(0); label->setGrow(1); label->setHeight(42);
         row->addView(label);
         auto button = new MusicButton(); button->setText("‹ " + value() + " ›"); button->setWidth(300); button->setHeight(42); button->setShrink(0); button->applyXMLAttribute("fontSize", "18");
-        auto adjust = [this, change](int direction) {
-            const auto previous = preferences;
-            change(direction);
-            try {
-                std::filesystem::create_directories("sdmc:/switch/navidrome_nx");
-                saveSettings(preferences);
-                changed();
-                message->setText(aurore::getStr("app/settings_saved")); message->setTextColor(nvgRGB(147, 224, 196));
-            } catch (...) {
-                preferences = previous;
-                message->setText(aurore::getStr("app/settings_save_error")); message->setTextColor(nvgRGB(255, 153, 164));
-            }
-            for (auto& item : values) item.first->setText("‹ " + item.second() + " ›");
-            updateAppearance();
-        };
+        auto adjust = [this, change](int direction) { applyOption(change, direction); };
         button->registerClickAction([adjust](aurore::View*) { adjust(1); return true; });
         button->registerAction("", aurore::BUTTON_NAV_LEFT, [adjust](aurore::View*) { adjust(-1); return true; }, true, true);
         button->registerAction("", aurore::BUTTON_NAV_RIGHT, [adjust](aurore::View*) { adjust(1); return true; }, true, true);
@@ -77,7 +82,7 @@ class SettingsScreen : public aurore::Activity {
 public:
     std::function<void()> closed;
     SettingsScreen(std::function<void()> changed, std::function<std::string()> remoteInfo, std::function<std::string()> remotePairing,
-        std::function<void()> closed, std::function<void()> logout, std::string accountServer, std::string accountUser) : changed(std::move(changed)), logout(std::move(logout)), accountServer(std::move(accountServer)), accountUser(std::move(accountUser)), remoteInfo(std::move(remoteInfo)), remotePairing(std::move(remotePairing)), closed(std::move(closed)) {}
+        std::function<void()> closed, std::function<void()> logout, std::string accountServer, std::string accountUser, AppUpdater& updater) : updater(updater), changed(std::move(changed)), logout(std::move(logout)), accountServer(std::move(accountServer)), accountUser(std::move(accountUser)), remoteInfo(std::move(remoteInfo)), remotePairing(std::move(remotePairing)), closed(std::move(closed)) {}
     ~SettingsScreen() override { if (closed) closed(); }
     aurore::View* createContentView() override {
         auto root = new MusicSurface(); root->setPadding(24, 48, 20, 48);
@@ -86,7 +91,7 @@ public:
         auto back = new MusicButton(); back->setText("\ue5c4"); back->setWidth(52); back->setHeight(44); back->setShrink(0); back->setPadding(6);
         back->applyXMLAttribute("fontSize", "26"); back->updateActionHint(aurore::BUTTON_A, aurore::getStr("app/back"));
         back->setId("settings/back"); back->registerClickAction([](aurore::View*) { aurore::Application::popActivity(); return true; }); headerRow->addView(back); root->addView(headerRow);
-        const char* tabKeys[] = {"app/settings_appearance", "app/settings_layout", "app/settings_remote", "app/settings_account"};
+        const char* tabKeys[] = {"app/settings_appearance", "app/settings_layout", "app/settings_remote", "app/settings_account", "app/settings_audio"};
         auto tabRow = new aurore::Box(aurore::Axis::ROW); tabRow->setHeight(44); tabRow->setShrink(0); tabRow->setMarginBottom(16);
         for (size_t i = 0; i < tabs.size(); ++i) {
             auto button = new MusicButton(); button->setText(aurore::getStr(tabKeys[i])); button->setId("settings/tab/" + std::to_string(i)); button->setHeight(44); button->setWidth(0); button->setGrow(1); button->applyXMLAttribute("fontSize", "18");
@@ -132,6 +137,33 @@ public:
         }
         auto logoutButton = new MusicButton(); logoutButton->setText(aurore::getStr("app/logout")); logoutButton->setWidth(300); logoutButton->setHeight(46); logoutButton->setMarginTop(12);
         logoutButton->registerClickAction([this](aurore::View*) { try { logout(); } catch (...) { message->setText(aurore::getStr("app/logout_error")); } return true; }); pages[3]->addView(logoutButton);
+        updateButton = new MusicButton();
+        updateButton->setId("settings/update"); updateButton->setWidth(300); updateButton->setHeight(46); updateButton->setMarginTop(16);
+        updateButton->registerClickAction([this](aurore::View*) { updater.start(); return true; });
+        pages[3]->addView(updateButton);
+        updateStatus = new aurore::Label();
+        updateStatus->setFontSize(16); updateStatus->setHeight(34); updateStatus->setShrink(0);
+        pages[3]->addView(updateStatus);
+        refreshUpdate();
+        section(pages[4], "app/equalizer", "app/equalizer_hint");
+        const char* bands[] = {"app/eq_bass", "app/eq_mid", "app/eq_treble"};
+        for (size_t band = 0; band < preferences.equalizer.size(); ++band) {
+            option(pages[4], aurore::getStr(bands[band]), [band] {
+                const int gain = preferences.equalizer[band];
+                return (gain > 0 ? "+" : "") + std::to_string(gain) + " dB";
+            }, [band](int direction) {
+                auto& gain = preferences.equalizer[band];
+                gain = adjustSetting(gain, -EqualizerGainLimit, EqualizerGainLimit, direction);
+            });
+        }
+        auto resetEq = new MusicButton();
+        resetEq->setText(aurore::getStr("app/eq_reset")); resetEq->setId("settings/eq_reset");
+        resetEq->setWidth(300); resetEq->setHeight(46);
+        resetEq->registerClickAction([this](aurore::View*) {
+            applyOption([](int) { preferences.equalizer = {}; }, 0);
+            return true;
+        });
+        pages[4]->addView(resetEq);
         settingsScroll->setContentView(options);
         qrPanel = new aurore::Box(aurore::Axis::COLUMN); qrPanel->setWidth(280); qrPanel->setShrink(0); qrPanel->setMarginLeft(24); qrPanel->setVisibility(aurore::Visibility::GONE);
         auto scan = new aurore::Label(); scan->setText(aurore::getStr("app/scan_remote")); scan->setFontSize(20); scan->setHeight(70); qrPanel->addView(scan);
@@ -151,7 +183,16 @@ public:
         registerAction(aurore::getStr("app/next_tab"), aurore::BUTTON_RB, [changeTab](aurore::View*) { changeTab(1); return true; });
         registerAction(aurore::getStr("app/back"), aurore::BUTTON_B, [](aurore::View*) { aurore::Application::popActivity(); return true; });
     }
+    void refreshUpdate() {
+        updateButton->setText(aurore::getStr(updater.available ? "app/update_install" : "app/update_check"));
+        const auto state = updater.busy() || updater.staged ? aurore::ButtonState::DISABLED : aurore::ButtonState::ENABLED;
+        if (updateButton->getState() != state) updateButton->setState(state);
+        auto text = aurore::getStr(std::string("app/") + updater.status);
+        if (updater.available) text += "  " + updater.available->tag;
+        updateStatus->setText(text);
+    }
     void poll() {
+        if (activeTab == 3) refreshUpdate();
         const auto clock = preferences.showClock ? clockText() : "";
         if (clock != lastClock) { lastClock = clock; header->setText((clock.empty() ? "" : clock + "   ") + aurore::getStr("app/settings")); }
         const auto pairing = remotePairing();

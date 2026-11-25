@@ -61,6 +61,7 @@ static std::string salt() {
 }
 
 class App : public aurore::Activity {
+    AppUpdater updater;
     std::unique_ptr<Api> api;
     aurore::Label* status = nullptr;
     aurore::ScrollingFrame* scroll = nullptr;
@@ -128,6 +129,14 @@ class App : public aurore::Activity {
     std::string selectedAlbum;
     PlaybackClock clock;
     AudioWaveform waveform;
+    AudioEqualizer equalizer;
+
+    static void postMix(void* context, Uint8* stream, int length) {
+        auto& app = *static_cast<App*>(context);
+        if (length <= 0) return;
+        app.equalizer.process(reinterpret_cast<int16_t*>(stream), static_cast<size_t>(length) / sizeof(int16_t));
+        AudioWaveform::postMix(&app.waveform, stream, length);
+    }
     long long lastSecond = -1;
     bool viewingAlbums = true, restoreAlbums = false, checkLayout = false;
     NVGcolor accent, muted, panel;
@@ -845,10 +854,12 @@ class App : public aurore::Activity {
         brandTitle->setVisibility(collapsed ? aurore::Visibility::GONE : aurore::Visibility::VISIBLE);
         tagline->setVisibility(aurore::Visibility::GONE);
         collapseButton->setText(collapsed ? "\ue5d2" : "\ue5c4");
+        collapseButton->setCornerRadius(8); collapseButton->setHighlightCornerRadius(8);
         collapseButton->updateActionHint(aurore::BUTTON_A, aurore::getStr("app/collapse_menu"));
         for (const auto& item : menuLabels) {
             item.first->setId(item.second.second);
             item.first->setText(item.second.first + (collapsed ? "" : "  " + aurore::getStr(item.second.second)));
+            item.first->setCornerRadius(8); item.first->setHighlightCornerRadius(8);
             item.first->setJustifyContent(collapsed ? aurore::JustifyContent::CENTER : aurore::JustifyContent::FLEX_START);
             item.first->applyXMLAttribute("textHorizontalAlign", collapsed ? "center" : "left");
         }
@@ -886,9 +897,9 @@ class App : public aurore::Activity {
     }
     void openSettings() {
         if (settingsScreen) return;
-        settingsScreen = new SettingsScreen([this] { applyRemote(); needsRerender = true; }, [this] { return remoteInfo(); }, [this] { return remote.running() ? pairingUrl(remote.url(), remote.pairingCode()) : std::string(); },
+        settingsScreen = new SettingsScreen([this] { equalizer.setGains(preferences.equalizer); applyRemote(); needsRerender = true; }, [this] { return remoteInfo(); }, [this] { return remote.running() ? pairingUrl(remote.url(), remote.pairingCode()) : std::string(); },
             [this] { settingsScreen = nullptr; preserveFocus = settingsNav; needsRerender = true; },
-            [this] { removeSavedLogin(); logoutRequested = true; }, api ? api->serverUrl() : "", api ? api->userName() : "");
+            [this] { removeSavedLogin(); logoutRequested = true; }, api ? api->serverUrl() : "", api ? api->userName() : "", updater);
         aurore::Application::pushActivity(settingsScreen);
     }
     void handleRemote(const RemoteCommand& command) {
@@ -1005,6 +1016,11 @@ class App : public aurore::Activity {
     }
 
 public:
+    void checkForUpdates(bool installed) {
+        updater.launchedFromInstallPath = installed;
+        updater.start();
+    }
+    bool updateStaged() const { return updater.staged; }
     ~App() override { if (loginScreen) loginScreen->closed = {}; if (lyricsScreen) lyricsScreen->closed = {}; if (settingsScreen) settingsScreen->closed = {}; shutdown(); }
     aurore::View* createContentView() override {
         accent = nvgRGB(116, 220, 255);
@@ -1050,7 +1066,7 @@ public:
             item.first->applyXMLAttribute("textHorizontalAlign", "left");
             item.first->applyXMLAttribute("fontSize", "16"); item.first->setPadding(6);
             item.first->setHeight(36); item.first->setMarginBottom(4); item.first->setMarginRight(0);
-            item.first->setCornerRadius(12); item.first->setHighlightCornerRadius(12);
+            item.first->setCornerRadius(8); item.first->setHighlightCornerRadius(8);
             item.first->updateActionHint(aurore::BUTTON_A, aurore::getStr(item.second.second));
         }
         sidebar->addView(nav); sidebar->addView(new aurore::Padding());
@@ -1189,14 +1205,17 @@ public:
             int frequency = 0, channels = 0; Uint16 format = 0;
             if (Mix_QuerySpec(&frequency, &format, &channels) && format == AUDIO_S16SYS && channels > 0 && channels <= 8) {
                 waveform.channels = channels;
-                Mix_SetPostMix(AudioWaveform::postMix, &waveform);
-            } else aurore::Logger::warning("Waveform disabled: unsupported mixer output format");
+                equalizer.setFormat(frequency, channels);
+                equalizer.setGains(preferences.equalizer);
+                Mix_SetPostMix(postMix, this);
+            } else aurore::Logger::warning("Equalizer and waveform disabled: unsupported mixer output format");
         }
         configure();
         applyRemote();
         if (api) loadHome();
     }
     void poll() {
+        if (updater.poll()) aurore::Application::notify(aurore::getStr("app/update_notification", updater.available->tag));
         if (logoutRequested) logout();
         if (loginScreen) loginScreen->poll();
         if (loginSavedRequested) {
@@ -1287,7 +1306,7 @@ static void configureMusicUi() {
     static ui::Prefs look;
     look.theme = "dark"; look.text_size = "normal"; look.density = "comfortable"; look.glow = false;
     ui::use_prefs(look);
-    ui::hooks::get().version = [] { return std::string("1.1.0-aurore"); };
+    ui::hooks::get().version = [] { return std::string(AppVersion); };
     ui::hooks::get().standalone_screen = [](aurore::View*) { return true; };
 }
 static void loadMusicUiAssets() {
@@ -1298,7 +1317,7 @@ static void loadMusicUiAssets() {
     nvgAddFallbackFontId(aurore::Application::getNVGContext(), aurore::Application::getFont("lyrics-bold"), aurore::Application::getFont(aurore::FONT_REGULAR));
 }
 #ifndef NAVIDROME_UI_TEST
-int main(int, char**) {
+int main(int argc, char** argv) {
     // Aurore userAppInit/userAppExit own sockets, RomFS, and nxlink stdio.
     if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK) return EXIT_FAILURE;
 #ifdef __SWITCH__
@@ -1315,7 +1334,24 @@ int main(int, char**) {
     aurore::Application::setGlobalQuit(true);
     auto app = new App();
     aurore::Application::pushActivity(app);
-    while (aurore::Application::mainLoop()) app->poll();
+    const std::string_view launched = argc > 0 ? argv[0] : "";
+    app->checkForUpdates(launched == AppInstallPath || launched == std::string_view(AppInstallPath).substr(5));
+    [[maybe_unused]] bool applyUpdate = false;
+    while (aurore::Application::mainLoop()) {
+        app->poll();
+        applyUpdate = app->updateStaged();
+    }
+#ifdef __SWITCH__
+    if (applyUpdate) {
+        // The ROM filesystem holds the running NRO open until it is unmounted.
+        if (R_SUCCEEDED(romfsExit())) {
+            try { replaceFileWithBackup(AppInstallPath, std::string(AppInstallPath) + ".update", true); }
+            catch (...) { aurore::Logger::error("Could not replace the NRO with the verified update"); }
+        } else {
+            aurore::Logger::error("Could not close RomFS to apply the update");
+        }
+    }
+#endif
     curl_global_cleanup();
     stopAppClock(timeReady);
     return EXIT_SUCCESS;

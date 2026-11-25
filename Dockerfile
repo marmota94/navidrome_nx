@@ -3,6 +3,7 @@ WORKDIR /app
 CMD ["make", "-j4"]
 
 FROM toolchain AS build
+ARG NAVIDROME_VERSION
 COPY . .
 RUN --mount=type=cache,target=/app/build.aurore make -j4
 

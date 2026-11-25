@@ -84,8 +84,11 @@ AURORE_TEST(all_app_screens) {
         h.swipe(flow->getX()+500, flow->getY()+70, flow->getX()+330, flow->getY()+70, 350); pump();
         AURORE_CHECK(caption->getFullText() != "Track 01");
     }
+    AURORE_CHECK(h.find("app/home")->getCornerRadius() == 8);
     tap("sidebar/collapse"); AURORE_CHECK(preferences.sidebarCollapsed);
+    AURORE_CHECK(h.find("app/home")->getCornerRadius() == 8);
     tap("sidebar/collapse"); AURORE_CHECK(!preferences.sidebarCollapsed);
+    AURORE_CHECK(h.find("app/home")->getCornerRadius() == 8);
 
     tap("app/settings"); AURORE_CHECK(dynamic_cast<SettingsScreen*>(h.top())); image("settings-appearance");
     setting("app/background"); AURORE_CHECK(preferences.background == 5); image("settings-rainbow");
@@ -97,7 +100,13 @@ AURORE_TEST(all_app_screens) {
     setting("app/visualizer"); AURORE_CHECK(preferences.visualizer == 2);
     h.tap(aurore::BUTTON_RB); pump(); image("settings-remote");
     setting("app/web_remote"); pump(25); AURORE_CHECK(preferences.remoteEnabled); image("settings-remote-paired");
-    h.tap(aurore::BUTTON_RB); pump(); AURORE_CHECK(h.hasText("test-user")); image("settings-account");
+    h.tap(aurore::BUTTON_RB); pump(); AURORE_CHECK(h.hasText("test-user"));
+    AURORE_CHECK(h.hasText(aurore::getStr("app/update_check"))); image("settings-account");
+    h.tap(aurore::BUTTON_RB); pump(); AURORE_CHECK(h.find("settings/tab/4") == aurore::Application::getCurrentFocus());
+    AURORE_CHECK(h.hasText(aurore::getStr("app/equalizer"))); image("settings-audio");
+    setting("app/eq_bass"); AURORE_CHECK(loadSettings().equalizer[0] == 1);
+    setting("app/eq_treble"); AURORE_CHECK(loadSettings().equalizer[2] == 1);
+    tap("settings/eq_reset"); AURORE_CHECK(loadSettings().equalizer == EqualizerGains{});
     h.tap(aurore::BUTTON_RB); pump(); AURORE_CHECK(h.find("settings/tab/0") == aurore::Application::getCurrentFocus());
     tap("settings/back"); pump(30); AURORE_CHECK(h.top() == app);
     AURORE_CHECK(loadSettings().visualizer == 2);

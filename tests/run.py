@@ -63,6 +63,10 @@ class Server(http.server.BaseHTTPRequestHandler):
                 self.send_error(400)
                 return
             body["subsonic-response"]["randomSongs"] = {"song": [{"id": f"random-{i}", "title": f"Random {i}", "artist": "Artist"} for i in range(15)]}
+        elif endpoint == "getAlbum" and query.get("id") == ["overlay-long"]:
+            body["subsonic-response"]["album"] = {"song": [
+                {"id": f"track-{i}", "title": f"Track {i}"} for i in range(12)
+            ]}
         elif endpoint == "getAlbum":
             if query.get("id") != ["id /&"]:
                 self.send_error(400)

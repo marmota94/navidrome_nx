@@ -72,6 +72,33 @@ docker run --rm -v "$PWD:/app" navidrome-aurore-ui-test
 
 Rendered screens are saved under `build.ui/screenshots/`.
 
+## Equalizer
+
+Open **Settings → Audio** to adjust bass, mids, and treble from −6 to +6 dB.
+Changes apply during playback and are saved automatically. **Reset equalizer**
+returns all bands to 0 dB.
+
+## App updates
+
+Navidrome NX checks recent GitHub releases at startup and offers the newest
+stable release that includes the app.
+Open **Settings → Account** to check again or install an available update.
+When the download is ready, quit Navidrome NX with **+** to apply the update,
+then reopen it. The previous executable is
+kept as `navidrome_nx.nro.bak` in the app directory.
+
+The updater installs the NRO at `/switch/navidrome_nx/navidrome_nx.nro`.
+Install the first updater-enabled build there manually. Install Ultrahand
+and sys-tune packages separately.
+
+For a future app release, build with the matching version and attach
+`dist/navidrome_nx.nro` to the corresponding stable tag (for example, `v1.1.1`).
+The updater verifies the asset size and the SHA-256 digest from GitHub.
+
+```sh
+docker build --build-arg NAVIDROME_VERSION=1.1.1 --target artifact --output type=local,dest=dist .
+```
+
 ## Install and sign in
 
 1. Copy the NRO to `/switch/navidrome_nx/navidrome_nx.nro` on the SD card.
@@ -235,9 +262,9 @@ Outputs `dist/NavidromeNX-ultrahand.zip` and the extracted SD layout in
 
 The overlay provides artwork, actual playback progress, transport controls, and
 Favorites → songs, Albums → songs, and Artists → albums → songs. It reads the
-login saved by the app. Selecting a song downloads its displayed page of up to
-10 tracks to SD before queueing. sys-tune can continue playing the cached page
-with the overlay closed.
+login saved by the app. Selecting a song starts playback when that song is
+cached. The next two songs are cached and queued in the background. sys-tune
+can continue playing queued songs with the overlay closed.
 
 This is a **separate queue** from the Aurore app and Android remote. It does
 not provide unlimited Navidrome streaming in the background. See

@@ -17,10 +17,19 @@ int main() {
     assert(loadSettings(path.c_str()).backgroundOpacity == 80);
     assert(!loadSettings(path.c_str()).cacheSongs);
     assert(loadSettings(path.c_str()).visualizer == 0);
+    assert(loadSettings(path.c_str()).equalizer == EqualizerGains{});
     Settings value; value.cacheSongs = true; value.columns = 6; value.background = 3; value.remoteEnabled = true;
     saveSettings(value, path.c_str());
     assert(loadSettings(path.c_str()).columns == 6);
     assert(loadSettings(path.c_str()).cacheSongs);
+    value.equalizer = {-6, 3, 6};
+    saveSettings(value, path.c_str());
+    assert(loadSettings(path.c_str()).equalizer == value.equalizer);
+    value.equalizer[2] = 7;
+    bool invalidGain = false;
+    try { saveSettings(value, path.c_str()); } catch (...) { invalidGain = true; }
+    assert(invalidGain && loadSettings(path.c_str()).equalizer[2] == 6);
+    value.equalizer = {};
     value.columns = 5; saveSettings(value, path.c_str());
     assert(loadSettings(path.c_str()).columns == 5);
     assert(std::rename(path.c_str(), (path + ".bak").c_str()) == 0);
