@@ -78,6 +78,12 @@ Open **Settings → Audio** to adjust bass, mids, and treble from −6 to +6 dB.
 Changes apply during playback and are saved automatically. **Reset equalizer**
 returns all bands to 0 dB.
 
+## Download management
+
+Open **Settings → Downloads**, select one or more cached songs, and choose
+**Delete selected**. Older cache entries display their file name until they
+are played again. The Ultrahand player has its own cache.
+
 ## App updates
 
 Navidrome NX checks recent GitHub releases at startup and offers the newest
@@ -308,9 +314,8 @@ checks. **Previously confirmed on Switch:** library/playback, Home shelves,
 sidebar/icons, lyrics navigation, web remote QR pairing, Settings tabs,
 search/order/list-grid controls, pagination, playlists, and waveform behavior.
 
-**Aurore migration branch:** `feat/aurore-ui` replaces the UI framework. The
-previous Switch confirmations above apply to the Borealis baseline, not this
-branch. Aurore hardware validation is pending. See [migration notes](docs/aurore-migration.md).
+The app now runs on Aurore. See [migration notes](docs/aurore-migration.md)
+for build details and the hardware verification status.
 
 **Ultrahand hardware validation is pending:** in-game audio mixing, overlay
 memory use, suspend/resume, and firmware / Atmosphère / Ultrahand compatibility

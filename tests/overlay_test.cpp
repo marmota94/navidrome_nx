@@ -103,8 +103,8 @@ int main(int argc, char** argv) {
     assert(window.size() == 3 && window[0].id == "track-9");
     assert(window[1].id == "track-10" && window[2].id == "track-11" && window[2].coverArt == "fallback-cover");
     page.offset = overlay::PageSize;
-    auto lastPage = overlay::browse(library, page);
-    assert(lastPage.lookAhead.empty() && overlay::playbackWindow(lastPage, 1).size() == 1);
+    auto lastAlbumPage = overlay::browse(library, page);
+    assert(lastAlbumPage.lookAhead.empty() && overlay::playbackWindow(lastAlbumPage, 1).size() == 1);
     bool more = false; assert(overlay::slice(songs.items, SIZE_MAX, more).empty() && !more);
     assert(overlay::elapsed(44100 * 65, 44100) == "1:05" && overlay::elapsed(4000, 0) == "0:00");
     std::filesystem::remove_all(root);

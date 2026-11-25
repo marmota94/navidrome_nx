@@ -221,5 +221,14 @@
   "eq_bass": "Graves · 120 Hz",
   "eq_mid": "Medios · 1 kHz",
   "eq_treble": "Agudos · 8 kHz",
-  "eq_reset": "Restablecer ecualizador"
+  "eq_reset": "Restablecer ecualizador",
+  "downloads": "Descargas",
+  "download_hint": "Selecciona las canciones guardadas que quieras borrar.",
+  "download_empty": "No hay canciones guardadas.",
+  "download_delete": "Borrar selección ({0})",
+  "download_confirm": "¿Borrar {0} descarga(s) seleccionada(s) de esta Switch?",
+  "download_confirm_action": "Borrar descargas",
+  "download_busy": "Espera a que termine de cargar la canción.",
+  "download_error": "No se pudieron leer o borrar algunas descargas.",
+  "download_deleted": "Descargas seleccionadas borradas."
 }

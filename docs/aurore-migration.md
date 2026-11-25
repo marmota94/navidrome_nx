@@ -57,7 +57,7 @@ synthetic audio fixture; it does not contact a user's server.
 A new Switch run is still required to verify deko3d rendering, touchscreen,
 SDK keyboard, audio ownership, performance, sleep/resume, and actual screen
 legibility. Desktop headless results do not establish those hardware behaviors.
-The public main branch and v1.0.0 release are not replaced by this migration.
+The v1.0.0 release remains available as the Borealis baseline.
 
 Validated locally on 2026-11-16: Switch Docker NRO build and embedded metadata;
 API/model/authentication/cache/remote/QR/lyrics/background/Cover Flow tests;

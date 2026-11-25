@@ -36,6 +36,20 @@ int main() {
     assert(cache.load(api, "extra").empty());
     assert(std::distance(std::filesystem::directory_iterator(root), std::filesystem::directory_iterator{}) == 1);
     cache.save(api, "erase", bytes); cache.erase(api, "erase"); assert(cache.load(api, "erase").empty());
+    cache.save(api, "named", bytes);
+    cache.save(api, "legacy", bytes);
+    Entry track; track.id = "named"; track.title = "My track"; track.artist = "An artist";
+    cache.describe(api, track);
+    auto downloads = cache.downloads();
+    assert(downloads.size() == 2);
+    auto named = std::find_if(downloads.begin(), downloads.end(), [](const auto& item) { return item.title == "My track · An artist"; });
+    assert(named != downloads.end() && named->bytes == bytes.size());
+    bool unsafe = false;
+    try { cache.eraseDownload("../keep.txt"); } catch (...) { unsafe = true; }
+    assert(unsafe && std::filesystem::exists(root / "keep.txt"));
+    cache.eraseDownload(named->filename);
+    assert(!std::filesystem::exists(root / (named->filename + ".json")));
+    assert(cache.downloads().size() == 1 && cache.load(api, "legacy") == bytes);
     std::filesystem::remove_all(root);
     std::ofstream(root) << "not a directory";
     rejected = false; try { cache.save(api, "fail", bytes); } catch (...) { rejected = true; }

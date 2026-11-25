@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 #include "api.hpp"
-#include "../../vendor/borealis/library/include/borealis/extern/nlohmann/json.hpp"
+#include "../../vendor/aurore/library/include/aurore/extern/nlohmann/json.hpp"
 #include <limits>
 
 namespace overlay {

@@ -221,5 +221,14 @@
   "eq_bass": "Bass · 120 Hz",
   "eq_mid": "Mids · 1 kHz",
   "eq_treble": "Treble · 8 kHz",
-  "eq_reset": "Reset equalizer"
+  "eq_reset": "Reset equalizer",
+  "downloads": "Downloads",
+  "download_hint": "Select cached songs to delete from this Switch.",
+  "download_empty": "No cached songs.",
+  "download_delete": "Delete selected ({0})",
+  "download_confirm": "Delete {0} selected download(s) from this Switch?",
+  "download_confirm_action": "Delete downloads",
+  "download_busy": "Wait for the current song to finish loading.",
+  "download_error": "Some downloads could not be read or deleted.",
+  "download_deleted": "Selected downloads deleted."
 }

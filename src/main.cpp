@@ -800,6 +800,9 @@ class App : public aurore::Activity {
                 bytes = api->request("stream", {{"id", track.id}, {"format", "mp3"}, {"maxBitRate", std::to_string(StreamBitRate)}}, salt(), 64 * 1024 * 1024);
                 if (cacheEnabled) { try { cache.save(*api, track.id, bytes); } catch (...) { cacheFailed = true; } }
             }
+            if (cacheEnabled && !cacheFailed) {
+                try { cache.describe(*api, track); } catch (...) { cacheFailed = true; }
+            }
             return [this, track, cacheEnabled, cacheFailed, bytes = std::move(bytes)]() mutable {
                 if (suppressPlayback) { refreshPlayer(); return; }
                 audio = std::move(bytes);
@@ -899,7 +902,7 @@ class App : public aurore::Activity {
         if (settingsScreen) return;
         settingsScreen = new SettingsScreen([this] { equalizer.setGains(preferences.equalizer); applyRemote(); needsRerender = true; }, [this] { return remoteInfo(); }, [this] { return remote.running() ? pairingUrl(remote.url(), remote.pairingCode()) : std::string(); },
             [this] { settingsScreen = nullptr; preserveFocus = settingsNav; needsRerender = true; },
-            [this] { removeSavedLogin(); logoutRequested = true; }, api ? api->serverUrl() : "", api ? api->userName() : "", updater);
+            [this] { removeSavedLogin(); logoutRequested = true; }, api ? api->serverUrl() : "", api ? api->userName() : "", updater, [this] { return job.valid(); });
         aurore::Application::pushActivity(settingsScreen);
     }
     void handleRemote(const RemoteCommand& command) {

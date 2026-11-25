@@ -11,9 +11,9 @@ INCLUDES := ../src source ../vendor/sys-tune/ipc ../vendor/aurore/library/includ
 include $(TOPDIR)/../vendor/libultrahand/ultrahand.mk
 APP_TITLE := Navidrome NX
 APP_AUTHOR := Navidrome NX contributors
-APP_VERSION := 1.0.0
+APP_VERSION := 1.1.0
 ARCH := -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
-CFLAGS := -g -Os -Wall -ffunction-sections -fdata-sections $(ARCH) $(INCLUDE) -D__SWITCH__ -DAPP_VERSION=\"1.0.0\" -DUI_OVERRIDE_PATH=\"/config/navidrome_nx_overlay/\"
+CFLAGS := -g -Os -Wall -ffunction-sections -fdata-sections $(ARCH) $(INCLUDE) -D__SWITCH__ -DAPP_VERSION=\"$(APP_VERSION)\" -DUI_OVERRIDE_PATH=\"/config/navidrome_nx_overlay/\"
 CXXFLAGS := $(CFLAGS) -std=gnu++23 -fno-rtti
 ASFLAGS := $(ARCH)
 LDFLAGS := -specs=$(DEVKITPRO)/libnx/switch.specs $(ARCH) -Wl,--gc-sections,-Map,$(notdir $*.map)

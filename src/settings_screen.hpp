@@ -4,9 +4,16 @@
 #include "clock_text.hpp"
 #include "pairing_qr.hpp"
 #include "release_update.hpp"
+#include "song_cache.hpp"
+#include <set>
 
 class SettingsScreen : public aurore::Activity {
     AppUpdater& updater;
+    std::function<bool()> cacheBusy;
+    aurore::Box* downloadRows = nullptr;
+    MusicButton* deleteDownloads = nullptr;
+    std::set<std::string> selectedDownloads;
+    static constexpr size_t DownloadsTab = 5;
     MusicButton* updateButton = nullptr;
     aurore::Label* updateStatus = nullptr;
     aurore::Label *message = nullptr, *remoteAddress = nullptr, *header = nullptr;
@@ -20,12 +27,64 @@ class SettingsScreen : public aurore::Activity {
     aurore::Box* qrPanel = nullptr;
     PairingQr* qr = nullptr;
     aurore::ScrollingFrame* settingsScroll = nullptr;
-    std::array<aurore::Box*, 5> pages{};
-    std::array<MusicButton*, 5> tabs{};
+    std::array<aurore::Box*, 6> pages{};
+    std::array<MusicButton*, 6> tabs{};
     int activeTab = 0;
     bool lastQrVisible = false;
     aurore::Box *bubbleRow = nullptr, *opacityRow = nullptr, *styleRow = nullptr, *speedRow = nullptr;
     aurore::Label* appearanceHint = nullptr;
+    void updateDeleteButton() {
+        deleteDownloads->setState(selectedDownloads.empty() ? aurore::ButtonState::DISABLED : aurore::ButtonState::ENABLED);
+        deleteDownloads->setText(aurore::getStr("app/download_delete", selectedDownloads.size()));
+    }
+    void loadDownloads() {
+        selectedDownloads.clear();
+        downloadRows->clearViews();
+        updateDeleteButton();
+        try {
+            const auto files = SongCache().downloads();
+            if (files.empty()) {
+                auto empty = new aurore::Label();
+                empty->setText(aurore::getStr("app/download_empty")); empty->setHeight(40);
+                downloadRows->addView(empty);
+            }
+            for (const auto& file : files) {
+                auto item = new MusicButton();
+                item->setId("download/" + file.filename);
+                item->setHeight(44); item->setShrink(0); item->setMarginBottom(6);
+                item->setJustifyContent(aurore::JustifyContent::FLEX_START);
+                item->applyXMLAttribute("singleLine", "true");
+                const auto text = file.title + "  ·  " + std::to_string((file.bytes + 1023) / 1024) + " KiB";
+                item->setText("[ ]  " + text);
+                item->registerClickAction([this, file = file.filename, text, item](aurore::View*) {
+                    if (selectedDownloads.erase(file)) item->setText("[ ]  " + text);
+                    else { selectedDownloads.insert(file); item->setText("[x]  " + text); }
+                    updateDeleteButton();
+                    return true;
+                });
+                downloadRows->addView(item);
+            }
+        } catch (...) { message->setText(aurore::getStr("app/download_error")); }
+    }
+    void confirmDeleteDownloads() {
+        if (selectedDownloads.empty()) return;
+        auto dialog = new aurore::Dialog(aurore::getStr("app/download_confirm", selectedDownloads.size()));
+        dialog->addButton(aurore::getStr("app/back"), [] {});
+        dialog->addButton(aurore::getStr("app/download_confirm_action"), [this] {
+            if (cacheBusy()) {
+                message->setText(aurore::getStr("app/download_busy"));
+                return;
+            }
+            bool failed = false;
+            for (const auto& filename : selectedDownloads) {
+                try { SongCache().eraseDownload(filename); } catch (...) { failed = true; }
+            }
+            loadDownloads();
+            aurore::Application::giveFocus(tabs[DownloadsTab]);
+            message->setText(aurore::getStr(failed ? "app/download_error" : "app/download_deleted"));
+        });
+        dialog->open();
+    }
     void updateAppearance() {
         const bool warp = preferences.background == 6;
         const bool colored = preferences.background != 4 && !warp;
@@ -41,6 +100,7 @@ class SettingsScreen : public aurore::Activity {
             tabs[i]->setStyle(static_cast<int>(i) == index ? &aurore::BUTTONSTYLE_PRIMARY : &aurore::BUTTONSTYLE_DEFAULT);
             assert(static_cast<int>(i) == index || pages[i]->getDefaultFocus() == nullptr);
         }
+        if (index == DownloadsTab) loadDownloads();
         if (auto first = pages[index]->getDefaultFocus()) first->setCustomNavigationRoute(aurore::FocusDirection::UP, tabs[index]);
         settingsScroll->willAppear(true);
         if (message) { message->setText(aurore::getStr("app/settings_adjust_hint")); message->setTextColor(nvgRGB(188, 192, 215)); }
@@ -82,7 +142,7 @@ class SettingsScreen : public aurore::Activity {
 public:
     std::function<void()> closed;
     SettingsScreen(std::function<void()> changed, std::function<std::string()> remoteInfo, std::function<std::string()> remotePairing,
-        std::function<void()> closed, std::function<void()> logout, std::string accountServer, std::string accountUser, AppUpdater& updater) : updater(updater), changed(std::move(changed)), logout(std::move(logout)), accountServer(std::move(accountServer)), accountUser(std::move(accountUser)), remoteInfo(std::move(remoteInfo)), remotePairing(std::move(remotePairing)), closed(std::move(closed)) {}
+        std::function<void()> closed, std::function<void()> logout, std::string accountServer, std::string accountUser, AppUpdater& updater, std::function<bool()> cacheBusy) : updater(updater), cacheBusy(std::move(cacheBusy)), changed(std::move(changed)), logout(std::move(logout)), accountServer(std::move(accountServer)), accountUser(std::move(accountUser)), remoteInfo(std::move(remoteInfo)), remotePairing(std::move(remotePairing)), closed(std::move(closed)) {}
     ~SettingsScreen() override { if (closed) closed(); }
     aurore::View* createContentView() override {
         auto root = new MusicSurface(); root->setPadding(24, 48, 20, 48);
@@ -91,7 +151,7 @@ public:
         auto back = new MusicButton(); back->setText("\ue5c4"); back->setWidth(52); back->setHeight(44); back->setShrink(0); back->setPadding(6);
         back->applyXMLAttribute("fontSize", "26"); back->updateActionHint(aurore::BUTTON_A, aurore::getStr("app/back"));
         back->setId("settings/back"); back->registerClickAction([](aurore::View*) { aurore::Application::popActivity(); return true; }); headerRow->addView(back); root->addView(headerRow);
-        const char* tabKeys[] = {"app/settings_appearance", "app/settings_layout", "app/settings_remote", "app/settings_account", "app/settings_audio"};
+        const char* tabKeys[] = {"app/settings_appearance", "app/settings_layout", "app/settings_remote", "app/settings_account", "app/settings_audio", "app/downloads"};
         auto tabRow = new aurore::Box(aurore::Axis::ROW); tabRow->setHeight(44); tabRow->setShrink(0); tabRow->setMarginBottom(16);
         for (size_t i = 0; i < tabs.size(); ++i) {
             auto button = new MusicButton(); button->setText(aurore::getStr(tabKeys[i])); button->setId("settings/tab/" + std::to_string(i)); button->setHeight(44); button->setWidth(0); button->setGrow(1); button->applyXMLAttribute("fontSize", "18");
@@ -164,6 +224,14 @@ public:
             return true;
         });
         pages[4]->addView(resetEq);
+        section(pages[DownloadsTab], "app/downloads", "app/download_hint");
+        deleteDownloads = new MusicButton();
+        deleteDownloads->setId("settings/delete-downloads");
+        deleteDownloads->setWidth(300); deleteDownloads->setHeight(44); deleteDownloads->setMarginBottom(12);
+        deleteDownloads->registerClickAction([this](aurore::View*) { confirmDeleteDownloads(); return true; });
+        pages[DownloadsTab]->addView(deleteDownloads);
+        downloadRows = new aurore::Box(aurore::Axis::COLUMN);
+        pages[DownloadsTab]->addView(downloadRows);
         settingsScroll->setContentView(options);
         qrPanel = new aurore::Box(aurore::Axis::COLUMN); qrPanel->setWidth(280); qrPanel->setShrink(0); qrPanel->setMarginLeft(24); qrPanel->setVisibility(aurore::Visibility::GONE);
         auto scan = new aurore::Label(); scan->setText(aurore::getStr("app/scan_remote")); scan->setFontSize(20); scan->setHeight(70); qrPanel->addView(scan);

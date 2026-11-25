@@ -107,6 +107,31 @@ AURORE_TEST(all_app_screens) {
     setting("app/eq_bass"); AURORE_CHECK(loadSettings().equalizer[0] == 1);
     setting("app/eq_treble"); AURORE_CHECK(loadSettings().equalizer[2] == 1);
     tap("settings/eq_reset"); AURORE_CHECK(loadSettings().equalizer == EqualizerGains{});
+    auto config = loadLoginConfig();
+    Api cacheAccount(config.get());
+    SongCache downloads;
+    for (const char* title : {"Download One", "Download Two", "Download Three"}) {
+        Entry entry; entry.id = title; entry.title = title;
+        downloads.save(cacheAccount, entry.id, {'m', 'p', '3'});
+        downloads.describe(cacheAccount, entry);
+    }
+    h.tap(aurore::BUTTON_RB); pump(); image("settings-downloads");
+    const auto stored = downloads.downloads();
+    AURORE_CHECK(stored.size() == 3);
+    if (stored.size() == 3) {
+        tap("download/" + stored[0].filename);
+        tap("download/" + stored[1].filename);
+        tap("settings/delete-downloads");
+        pump(40); // Let the dialog finish opening before sending confirmation input.
+        auto confirm = h.findText(aurore::getStr("app/download_confirm_action"));
+        AURORE_CHECK(confirm);
+        if (confirm) {
+            aurore::Application::giveFocus(confirm->getParent());
+            AURORE_CHECK(h.tapView(confirm->getParent())); pump(40);
+        }
+        AURORE_CHECK(downloads.downloads().size() == 1);
+        AURORE_CHECK(downloads.load(cacheAccount, stored[2].title).size() == 3);
+    }
     h.tap(aurore::BUTTON_RB); pump(); AURORE_CHECK(h.find("settings/tab/0") == aurore::Application::getCurrentFocus());
     tap("settings/back"); pump(30); AURORE_CHECK(h.top() == app);
     AURORE_CHECK(loadSettings().visualizer == 2);
